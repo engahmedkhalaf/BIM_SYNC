@@ -1,20 +1,18 @@
 """
-BIM File Sync Automator  v8.2  —  Light Blue Theme
+BIM File Sync Automator  v8.3  —  Light Blue Theme
+Prepared by Ahmed Khalaf — BIM Manager
 ─────────────────────────────────────────────────────────────────────────────
-Full white / light blue colour scheme.
+Full white / light blue color scheme.
 Copies .nwc  .ifc  .xlsx files.
 All features preserved: multi-job, multi-source, pick-list, schedule,
 import/export Excel & CSV.
 
-NEW in v8.2:
-  Pick-list 2 — Latest File Picker
-    • Scans source folders for .nwc, .rvt, .ifc files
-    • Shows them sorted by last-modified date (newest first)
-    • User selects specific files to always sync (by exact filename)
-    • Selected files are synced regardless of pick-list codes
-    • Independent of Pick-list 1 — both can be active simultaneously
+CHANGE (v8.3): Files now always overwrite existing files at the destination.
+               The previous "skip if up-to-date" guard has been removed.
 
 FIX: Long Windows path support (\\?\\ prefix) + os.makedirs on destination.
+FIX: Log file now written to a per-user writable location instead of the
+     installation directory (avoids PermissionError under C:\\Program Files).
 ─────────────────────────────────────────────────────────────────────────────
 """
 
@@ -26,7 +24,7 @@ import time
 import threading
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import List, Set
+from typing import List, Optional, Set
 import customtkinter as ctk
 from tkinter import filedialog, messagebox
 from loguru import logger
@@ -37,10 +35,41 @@ try:
     OPENPYXL_OK = True
 except ImportError:
     OPENPYXL_OK = False
+    # Define the names in the failure path too, so references elsewhere
+    # resolve. They are only ever used when OPENPYXL_OK is True.
+    openpyxl = None
+    Font = PatternFill = Alignment = Border = Side = None
+
+
+# ── Writable log location ───────────────────────────────────────────────────────
+def _resolve_log_path() -> str:
+    """
+    Return a log-file path inside a per-user writable directory.
+    On Windows this is %LOCALAPPDATA%\\BIMSyncBuild\\logs, which is writable
+    without admin rights — unlike the installation folder under Program Files.
+    """
+    if os.name == "nt":
+        base = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
+    else:
+        base = os.environ.get("XDG_DATA_HOME") or os.path.join(
+            os.path.expanduser("~"), ".local", "share"
+        )
+    log_dir = os.path.join(base, "BIMSyncBuild", "logs")
+    try:
+        os.makedirs(log_dir, exist_ok=True)
+    except Exception:
+        # Last-resort fallback: temp dir (always writable)
+        import tempfile
+        log_dir = os.path.join(tempfile.gettempdir(), "BIMSyncBuild")
+        os.makedirs(log_dir, exist_ok=True)
+    return os.path.join(log_dir, "bim_sync_history.log")
+
+
+LOG_PATH = _resolve_log_path()
 
 # ── Logging ────────────────────────────────────────────────────────────────────
 logger.add(
-    "bim_sync_history.log",
+    LOG_PATH,
     rotation="500 KB",
     retention=5,
     format="{time:YYYY-MM-DD HH:mm:ss} | {level} | {message}",
@@ -52,7 +81,6 @@ DEFAULT_PICKS: List[str] = [
     "WHG", "WBR", "WHM", "WHR", "WPB",
 ]
 EXTENSIONS       = (".nwc", ".ifc", ".xlsx")
-LATEST_PICK_EXTS = (".nwc", ".rvt", ".ifc")   # extensions shown in Latest File Picker
 ALL_DAYS         = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 DAY_MAP          = {
     "Mon": "monday", "Tue": "tuesday", "Wed": "wednesday",
@@ -60,10 +88,10 @@ DAY_MAP          = {
 }
 COLUMNS = [
     "job_name", "sources", "destination", "exec_time", "days",
-    "pick_list", "enabled", "filter_date", "auto_today", "latest_files",
+    "pick_list", "enabled", "filter_date", "auto_today",
 ]
 
-# ── Light Blue Theme Colours ───────────────────────────────────────────────────
+# ── Light Blue Theme Colors ────────────────────────────────────────────────────
 COLORS = {
     "green":    "#27ae60", "green_h":  "#219150",
     "red":      "#c0392b", "red_h":    "#a93226",
@@ -80,8 +108,6 @@ COLORS = {
     "border":   "#a8c8e8",
     "text":     "#0d2b45",
     "text_dim": "#4a7a9b",
-    "latest_bg":"#e8f5e9",   # soft green tint for pick-list 2
-    "latest_hdr":"#2e7d32",  # dark green header
 }
 
 JOB_COLORS = [
@@ -110,43 +136,6 @@ def _long_path(path: str) -> str:
     return path
 
 
-def _scan_latest_files(sources: List[str]) -> List[dict]:
-    """
-    Scan source folders for .nwc .rvt .ifc files.
-    Deduplicates by filename — if the same filename exists in multiple
-    folders, only the NEWEST (highest mtime) copy is kept.
-    Returns list sorted by mtime descending (newest first).
-    """
-    # key = lowercase filename, value = best (newest) entry found so far
-    best: dict = {}
-
-    for src_root in sources:
-        src_real = _long_path(src_root)
-        if not os.path.isdir(src_real):
-            continue
-        for root, _, files in os.walk(src_real):
-            for filename in files:
-                if filename.lower().endswith(LATEST_PICK_EXTS):
-                    full_path = os.path.join(root, filename)
-                    try:
-                        mtime = os.path.getmtime(full_path)
-                    except Exception:
-                        continue
-                    key = filename.lower()   # deduplicate case-insensitively
-                    if key not in best or mtime > best[key]["mtime"]:
-                        best[key] = {
-                            "path":      full_path,
-                            "filename":  filename,
-                            "ext":       os.path.splitext(filename)[1].lower(),
-                            "mtime":     mtime,
-                            "mtime_str": datetime.fromtimestamp(mtime).strftime("%Y-%m-%d  %H:%M"),
-                        }
-
-    result = list(best.values())
-    result.sort(key=lambda x: x["mtime"], reverse=True)
-    return result
-
-
 # ── Job Data Model ─────────────────────────────────────────────────────────────
 @dataclass
 class SyncJob:
@@ -160,7 +149,6 @@ class SyncJob:
     enabled:      bool      = True
     filter_date:  str       = ""
     auto_today:   bool      = False
-    latest_files: List[str] = field(default_factory=list)   # NEW: exact filenames from pick-list 2
     copied:       int       = 0
     failed:       int       = 0
     last_run:     str       = "—"
@@ -193,7 +181,6 @@ class SyncJob:
             "enabled":      "Yes" if self.enabled else "No",
             "filter_date":  self.filter_date,
             "auto_today":   "Yes" if self.auto_today else "No",
-            "latest_files": " | ".join(self.latest_files),
         }
 
     @staticmethod
@@ -211,7 +198,6 @@ class SyncJob:
             enabled      = enabled,
             filter_date  = row.get("filter_date", "").strip(),
             auto_today   = auto_today,
-            latest_files = _split(row.get("latest_files", "")),
         )
 
 
@@ -223,8 +209,8 @@ def export_excel(jobs: List[SyncJob], filepath: str):
     ws = wb.active
     ws.title = "Sync Jobs"
 
-    hdr_fill  = PatternFill("solid", fgColor="1A6FA8")
-    hdr_font  = Font(bold=True, color="FFFFFF", name="Arial", size=11)
+    hdr_fill  = PatternFill
+    hdr_font  = Font
     hdr_align = Alignment(horizontal="center", vertical="center", wrap_text=True)
     thin      = Side(style="thin", color="B0B8C8")
     hdr_brd   = Border(left=thin, right=thin, top=thin, bottom=thin)
@@ -234,7 +220,6 @@ def export_excel(jobs: List[SyncJob], filepath: str):
         "Exec Time\n(HH:MM)", "Days\n(pipe-separated)",
         "Pick-list Codes\n(pipe-separated)", "Enabled\n(Yes/No)",
         "Filter Date\n(YYYY-MM-DD)", "Auto Today\n(Yes/No)",
-        "Latest Files\n(pipe-separated filenames)",
     ]
     ws.append(headers)
     for cell in ws[1]:
@@ -242,7 +227,7 @@ def export_excel(jobs: List[SyncJob], filepath: str):
         cell.alignment = hdr_align; cell.border = hdr_brd
     ws.row_dimensions[1].height = 36
 
-    ROW_FILLS = ["EAF0FB", "F5F7FA"] * 8
+    row_fills = ["EAF0FB", "F5F7FA"] * 8
     data_font  = Font(name="Consolas", size=10, color="1A1A1A")
     data_align = Alignment(vertical="top", wrap_text=True)
     data_brd   = Border(left=thin, right=thin, bottom=thin)
@@ -251,12 +236,12 @@ def export_excel(jobs: List[SyncJob], filepath: str):
 
     for r_idx, job in enumerate(jobs, 2):
         ws.append([job.to_row()[c] for c in COLUMNS])
-        fill = PatternFill("solid", fgColor=ROW_FILLS[r_idx % len(ROW_FILLS)])
+        fill = PatternFill("solid", fgColor=row_fills[r_idx % len(row_fills)])
         for c_idx, cell in enumerate(ws[r_idx], 1):
             cell.fill = fill; cell.border = data_brd; cell.alignment = data_align
             cell.font = (yes_font if cell.value == "Yes" else no_font) if c_idx == 7 else data_font
 
-    col_widths = [18, 50, 50, 12, 30, 40, 10, 14, 12, 60]
+    col_widths = [18, 50, 50, 12, 30, 40, 10, 14, 12]
     for i, w in enumerate(col_widths, 1):
         ws.column_dimensions[openpyxl.utils.get_column_letter(i)].width = w
 
@@ -274,13 +259,11 @@ def export_excel(jobs: List[SyncJob], filepath: str):
         "  enabled      : Yes  or  No",
         "  filter_date  : YYYY-MM-DD or blank for all files",
         "  auto_today   : Yes = use today's date at run time",
-        "  latest_files : Exact filenames separated by  |  (from Pick-list 2)",
-        "                 Example:  Building_A.nwc | Structure.rvt | MEP.ifc", "",
+        "",
         "TIPS:",
-        "  • Pick-list 1: matches files containing BIM codes in their filename.",
-        "  • Pick-list 2: matches exact filenames — always syncs the latest version.",
-        "  • Both pick-lists are independent and additive.",
-        "  • Files copied: .nwc  .ifc  .xlsx (Pick-list 1) + .nwc .rvt .ifc (Pick-list 2)",
+        "  • Pick-list: matches files containing BIM codes in their filename.",
+        "  • Files copied: .nwc  .ifc  .xlsx",
+        "  • Existing destination files are always overwritten.",
     ]
     for row_i, line in enumerate(lines, 1):
         cell = inst.cell(row=row_i, column=1, value=line)
@@ -435,9 +418,9 @@ class PickListDialog(ctk.CTkToplevel):
         qa = ctk.CTkFrame(self, fg_color="transparent")
         qa.pack(fill="x", padx=20, pady=(0, 4))
         ctk.CTkButton(qa, text="Select All", width=90, height=26,
-                      command=lambda: [v.set(True)  for v in self.cb_vars.values()]).pack(side="left", padx=(0, 6))
+                      command=lambda: self._set_all_codes(True)).pack(side="left", padx=(0, 6))
         ctk.CTkButton(qa, text="Clear All",  width=90, height=26, fg_color=COLORS["dim"],
-                      command=lambda: [v.set(False) for v in self.cb_vars.values()]).pack(side="left")
+                      command=lambda: self._set_all_codes(False)).pack(side="left")
 
         ctk.CTkLabel(self, text="Extra / custom codes (comma-separated):",
                      font=("Arial", 11), text_color=COLORS["text_dim"]).pack(padx=20, anchor="w", pady=(6, 2))
@@ -465,6 +448,10 @@ class PickListDialog(ctk.CTkToplevel):
         ctk.CTkButton(btn_row, text="Cancel", height=36, fg_color=COLORS["dim"],
                       command=self._cancel).pack(side="left", expand=True, fill="x")
 
+    def _set_all_codes(self, value: bool):
+        for v in self.cb_vars.values():
+            v.set(value)
+
     def _collect(self) -> List[str]:
         codes = [c for c, v in self.cb_vars.items() if v.get()]
         for c in self.custom_entry.get().split(","):
@@ -482,519 +469,6 @@ class PickListDialog(ctk.CTkToplevel):
         if not codes:
             messagebox.showwarning("Pick-list", "Select at least one code.", parent=self); return
         self.result = codes; self.grab_release(); self.destroy()
-
-    def _cancel(self):
-        self.grab_release(); self.destroy()
-
-
-# ── NEW: Latest File Picker Dialog (Pick-list 2) ───────────────────────────────
-class LatestFilePickerDialog(ctk.CTkToplevel):
-    """
-    Scans source folders for .nwc .rvt .ifc files and displays them
-    sorted by last-modified date (newest first).
-    User selects specific files to always include in the sync.
-    """
-    EXT_COLORS = {
-        ".nwc": "#1565C0",   # dark blue
-        ".rvt": "#6A1B9A",   # deep purple
-        ".ifc": "#00695C",   # dark teal
-    }
-    EXT_BADGE = {
-        ".nwc": "NWC",
-        ".rvt": "RVT",
-        ".ifc": "IFC",
-    }
-
-    def __init__(self, master, job: SyncJob):
-        super().__init__(master)
-        self.job    = job
-        self.result = None
-        self.title(f"Pick-list 2 — Latest Files  [{job.label}]")
-        self.geometry("820x620")
-        self.minsize(680, 480)
-        self.configure(fg_color="#e8f5e9")
-        self.grab_set(); self.lift(); self.focus_force()
-
-        self._all_files:  List[dict]               = []
-        self._filtered:   List[dict]               = []
-        self._check_vars: dict[str, ctk.BooleanVar] = {}
-        self._filter_ext: str                       = "All"
-        self._search_str: str                       = ""
-
-        self._build()
-        self.protocol("WM_DELETE_WINDOW", self._cancel)
-        # Scan on open
-        self._scan()
-
-    # ── UI ─────────────────────────────────────────────────────────────────────
-    def _build(self):
-        # ── Header ────────────────────────────────────────────────────────────
-        hdr = ctk.CTkFrame(self, fg_color=COLORS["latest_hdr"], corner_radius=0)
-        hdr.pack(fill="x")
-        ctk.CTkLabel(
-            hdr,
-            text="📂  Pick-list 2 — Latest File Picker",
-            font=("Arial", 14, "bold"), text_color="white",
-        ).pack(side="left", padx=16, pady=10)
-        ctk.CTkLabel(
-            hdr,
-            text=f"Job: {self.job.label}",
-            font=("Arial", 11), text_color="#c8e6c9",
-        ).pack(side="right", padx=16)
-
-        # ── Info bar ──────────────────────────────────────────────────────────
-        info = ctk.CTkFrame(self, fg_color="#c8e6c9", corner_radius=0)
-        info.pack(fill="x")
-        ctk.CTkLabel(
-            info,
-            text="Scans .nwc  .rvt  .ifc  files in source folders — sorted newest first.  "
-                 "Selected files are always synced regardless of Pick-list 1 codes.",
-            font=("Arial", 10), text_color="#1b5e20",
-        ).pack(side="left", padx=12, pady=5)
-
-        # ── Toolbar row 1: Search + Filter + Rescan ───────────────────────────
-        toolbar = ctk.CTkFrame(self, fg_color="transparent")
-        toolbar.pack(fill="x", padx=14, pady=(8, 2))
-
-        # Search
-        ctk.CTkLabel(toolbar, text="🔍", font=("Arial", 13),
-                     text_color=COLORS["latest_hdr"]).pack(side="left")
-        self.search_var = ctk.StringVar()
-        self.search_var.trace_add("write", self._on_search)
-        ctk.CTkEntry(
-            toolbar, textvariable=self.search_var, width=200, height=30,
-            placeholder_text="Search filename…",
-            font=("Arial", 11), fg_color="white", text_color="#1b5e20",
-            border_color="#81c784",
-        ).pack(side="left", padx=(4, 12))
-
-        # Extension filter radio buttons
-        ctk.CTkLabel(toolbar, text="Filter:", font=("Arial", 11),
-                     text_color=COLORS["latest_hdr"]).pack(side="left")
-        self.ext_var = ctk.StringVar(value="All")
-        for ext_label in ["All", "NWC", "RVT", "IFC"]:
-            ctk.CTkRadioButton(
-                toolbar, text=ext_label, variable=self.ext_var, value=ext_label,
-                font=("Arial", 10, "bold"), text_color=COLORS["latest_hdr"],
-                command=self._on_filter,
-            ).pack(side="left", padx=5)
-
-        # Rescan button
-        ctk.CTkButton(
-            toolbar, text="🔄 Rescan", width=80, height=28,
-            fg_color=COLORS["teal"], hover_color=COLORS["teal_h"],
-            font=("Arial", 10, "bold"),
-            command=self._scan,
-        ).pack(side="right", padx=4)
-
-        # ── Toolbar row 2: type-aware Select/Clear buttons ────────────────────
-        sel_bar = ctk.CTkFrame(self, fg_color="#d0ead0", corner_radius=6)
-        sel_bar.pack(fill="x", padx=14, pady=(0, 4))
-
-        ctk.CTkLabel(sel_bar, text="Select / Clear:", font=("Arial", 10, "bold"),
-                     text_color=COLORS["latest_hdr"]).pack(side="left", padx=(10, 6), pady=5)
-
-        # All
-        ctk.CTkButton(sel_bar, text="✔ All", width=68, height=26,
-                      font=("Arial", 10, "bold"),
-                      fg_color=COLORS["green"], hover_color=COLORS["green_h"],
-                      command=lambda: self._select_by_ext(None, True),
-                      ).pack(side="left", padx=3, pady=4)
-        ctk.CTkButton(sel_bar, text="✘ All", width=68, height=26,
-                      font=("Arial", 10, "bold"),
-                      fg_color="#78909c", hover_color="#546e7a",
-                      command=lambda: self._select_by_ext(None, False),
-                      ).pack(side="left", padx=(0, 10), pady=4)
-
-        # Separator
-        ctk.CTkLabel(sel_bar, text="│", text_color=COLORS["border"]).pack(side="left", padx=4)
-
-        # NWC
-        ctk.CTkLabel(sel_bar, text="NWC", width=34, font=("Consolas", 9, "bold"),
-                     fg_color=self.EXT_COLORS[".nwc"], text_color="white",
-                     corner_radius=4).pack(side="left", padx=(6, 2), pady=4)
-        ctk.CTkButton(sel_bar, text="✔", width=34, height=26,
-                      font=("Arial", 11, "bold"),
-                      fg_color=self.EXT_COLORS[".nwc"], hover_color="#0d47a1",
-                      command=lambda: self._select_by_ext(".nwc", True),
-                      ).pack(side="left", padx=2, pady=4)
-        ctk.CTkButton(sel_bar, text="✘", width=34, height=26,
-                      font=("Arial", 11, "bold"),
-                      fg_color="#78909c", hover_color="#546e7a",
-                      command=lambda: self._select_by_ext(".nwc", False),
-                      ).pack(side="left", padx=(0, 8), pady=4)
-
-        # Separator
-        ctk.CTkLabel(sel_bar, text="│", text_color=COLORS["border"]).pack(side="left", padx=4)
-
-        # RVT
-        ctk.CTkLabel(sel_bar, text="RVT", width=34, font=("Consolas", 9, "bold"),
-                     fg_color=self.EXT_COLORS[".rvt"], text_color="white",
-                     corner_radius=4).pack(side="left", padx=(6, 2), pady=4)
-        ctk.CTkButton(sel_bar, text="✔", width=34, height=26,
-                      font=("Arial", 11, "bold"),
-                      fg_color=self.EXT_COLORS[".rvt"], hover_color="#4a148c",
-                      command=lambda: self._select_by_ext(".rvt", True),
-                      ).pack(side="left", padx=2, pady=4)
-        ctk.CTkButton(sel_bar, text="✘", width=34, height=26,
-                      font=("Arial", 11, "bold"),
-                      fg_color="#78909c", hover_color="#546e7a",
-                      command=lambda: self._select_by_ext(".rvt", False),
-                      ).pack(side="left", padx=(0, 8), pady=4)
-
-        # Separator
-        ctk.CTkLabel(sel_bar, text="│", text_color=COLORS["border"]).pack(side="left", padx=4)
-
-        # IFC
-        ctk.CTkLabel(sel_bar, text="IFC", width=34, font=("Consolas", 9, "bold"),
-                     fg_color=self.EXT_COLORS[".ifc"], text_color="white",
-                     corner_radius=4).pack(side="left", padx=(6, 2), pady=4)
-        ctk.CTkButton(sel_bar, text="✔", width=34, height=26,
-                      font=("Arial", 11, "bold"),
-                      fg_color=self.EXT_COLORS[".ifc"], hover_color="#004d40",
-                      command=lambda: self._select_by_ext(".ifc", True),
-                      ).pack(side="left", padx=2, pady=4)
-        ctk.CTkButton(sel_bar, text="✘", width=34, height=26,
-                      font=("Arial", 11, "bold"),
-                      fg_color="#78909c", hover_color="#546e7a",
-                      command=lambda: self._select_by_ext(".ifc", False),
-                      ).pack(side="left", padx=(0, 8), pady=4)
-
-        # Live count label on the right
-        self.lbl_sel_count = ctk.CTkLabel(
-            sel_bar, text="0 selected", font=("Arial", 10, "bold"),
-            text_color=COLORS["latest_hdr"],
-        )
-        self.lbl_sel_count.pack(side="right", padx=12)
-
-        # ── Column headers ────────────────────────────────────────────────────
-        col_hdr = ctk.CTkFrame(self, fg_color="#a5d6a7", corner_radius=0)
-        col_hdr.pack(fill="x", padx=14)
-        for txt, w in [("  ✓", 30), ("Type", 52), ("Filename", 320), ("Modified", 160), ("Full Path", 0)]:
-            ctk.CTkLabel(
-                col_hdr, text=txt, width=w, anchor="w",
-                font=("Consolas", 10, "bold"), text_color="#1b5e20",
-            ).pack(side="left", padx=4, pady=4)
-
-        # ── Scrollable file list ──────────────────────────────────────────────
-        self.list_frame = ctk.CTkScrollableFrame(
-            self, fg_color="white",
-            border_width=1, border_color="#81c784",
-        )
-        self.list_frame.pack(fill="both", expand=True, padx=14, pady=4)
-
-        # ── Status / count bar ────────────────────────────────────────────────
-        self.lbl_status = ctk.CTkLabel(
-            self, text="Scanning…", font=("Arial", 10),
-            text_color=COLORS["latest_hdr"],
-        )
-        self.lbl_status.pack(padx=14, anchor="w", pady=2)
-
-        # ── Bottom buttons ────────────────────────────────────────────────────
-        btn_row = ctk.CTkFrame(self, fg_color="transparent")
-        btn_row.pack(fill="x", padx=14, pady=(4, 6))
-        ctk.CTkButton(
-            btn_row, text="✔  Apply Selection", height=38,
-            font=("Arial", 12, "bold"),
-            fg_color=COLORS["green"], hover_color=COLORS["green_h"],
-            command=self._apply,
-        ).pack(side="left", expand=True, fill="x", padx=(0, 6))
-        ctk.CTkButton(
-            btn_row, text="Cancel", height=38, font=("Arial", 12),
-            fg_color=COLORS["dim"], command=self._cancel,
-        ).pack(side="left", expand=True, fill="x")
-
-        # ── Export buttons ────────────────────────────────────────────────────
-        exp_row = ctk.CTkFrame(self, fg_color="#d0ead0", corner_radius=6)
-        exp_row.pack(fill="x", padx=14, pady=(0, 14))
-        ctk.CTkLabel(
-            exp_row, text="Export selection:", font=("Arial", 10, "bold"),
-            text_color=COLORS["latest_hdr"],
-        ).pack(side="left", padx=(10, 8), pady=6)
-        ctk.CTkButton(
-            exp_row, text="⬇  Export Excel (.xlsx)", width=180, height=30,
-            font=("Arial", 10, "bold"),
-            fg_color=COLORS["gold"], hover_color=COLORS["gold_h"],
-            command=self._export_excel,
-        ).pack(side="left", padx=4, pady=6)
-        ctk.CTkButton(
-            exp_row, text="⬇  Export CSV (.csv)", width=160, height=30,
-            font=("Arial", 10, "bold"),
-            fg_color="#4a7c59", hover_color="#3a6447",
-            command=self._export_csv,
-        ).pack(side="left", padx=4, pady=6)
-        ctk.CTkLabel(
-            exp_row,
-            text="Exports all scanned files — selected rows highlighted in green",
-            font=("Arial", 9), text_color=COLORS["text_dim"],
-        ).pack(side="left", padx=10)
-
-    # ── Scan ───────────────────────────────────────────────────────────────────
-    def _scan(self):
-        self.lbl_status.configure(text="🔄 Scanning source folders…")
-        self._clear_list_widgets()
-        threading.Thread(target=self._scan_thread, daemon=True).start()
-
-    def _scan_thread(self):
-        files = _scan_latest_files(self.job.sources)
-        self.after(0, lambda: self._on_scan_done(files))
-
-    def _on_scan_done(self, files: List[dict]):
-        self._all_files = files
-        # Restore previously selected files
-        prev_selected: Set[str] = set(self.job.latest_files)
-        self._check_vars.clear()
-        for f in files:
-            var = ctk.BooleanVar(value=(f["filename"] in prev_selected))
-            self._check_vars[f["filename"]] = var
-
-        self._apply_filter()
-
-    # ── Filter / Search ────────────────────────────────────────────────────────
-    def _on_search(self, *_):
-        self._search_str = self.search_var.get().strip().lower()
-        self._apply_filter()
-
-    def _on_filter(self):
-        self._filter_ext = self.ext_var.get()
-        self._apply_filter()
-
-    def _apply_filter(self):
-        ext_map = {"All": None, "NWC": ".nwc", "RVT": ".rvt", "IFC": ".ifc"}
-        wanted_ext = ext_map.get(self._filter_ext)
-        self._filtered = [
-            f for f in self._all_files
-            if (wanted_ext is None or f["ext"] == wanted_ext)
-            and (not self._search_str or self._search_str in f["filename"].lower())
-        ]
-        self._rebuild_list()
-
-    # ── List Rendering ─────────────────────────────────────────────────────────
-    def _clear_list_widgets(self):
-        for w in self.list_frame.winfo_children():
-            w.destroy()
-
-    def _rebuild_list(self):
-        self._clear_list_widgets()
-        if not self._filtered:
-            ctk.CTkLabel(
-                self.list_frame,
-                text="No files found. Check that source folders are added to this job.",
-                font=("Arial", 11), text_color=COLORS["dim"],
-            ).pack(pady=20)
-            self._update_status()
-            return
-
-        for i, f in enumerate(self._filtered):
-            bg = "#f1f8e9" if i % 2 == 0 else "white"
-            row = ctk.CTkFrame(self.list_frame, fg_color=bg, corner_radius=4)
-            row.pack(fill="x", pady=1, padx=2)
-
-            # Checkbox
-            var = self._check_vars.get(f["filename"], ctk.BooleanVar(value=False))
-            ctk.CTkCheckBox(
-                row, text="", variable=var, width=28,
-                checkbox_width=16, checkbox_height=16,
-                command=self._update_status,
-            ).pack(side="left", padx=(6, 2))
-
-            # Extension badge
-            ext    = f["ext"]
-            color  = self.EXT_COLORS.get(ext, "#555")
-            badge  = self.EXT_BADGE.get(ext, ext.upper().lstrip("."))
-            ctk.CTkLabel(
-                row, text=badge, width=46, font=("Consolas", 9, "bold"),
-                fg_color=color, text_color="white", corner_radius=4,
-            ).pack(side="left", padx=4, pady=4)
-
-            # Filename
-            ctk.CTkLabel(
-                row, text=f["filename"], anchor="w", width=310,
-                font=("Consolas", 10, "bold"), text_color="#1b5e20",
-            ).pack(side="left", padx=4)
-
-            # Modified date
-            ctk.CTkLabel(
-                row, text=f["mtime_str"], anchor="w", width=150,
-                font=("Consolas", 10), text_color=COLORS["text_dim"],
-            ).pack(side="left", padx=4)
-
-            # Truncated path
-            path_trimmed = f["path"]
-            if len(path_trimmed) > 55:
-                path_trimmed = "…" + path_trimmed[-54:]
-            ctk.CTkLabel(
-                row, text=path_trimmed, anchor="w",
-                font=("Arial", 9), text_color=COLORS["dim"],
-            ).pack(side="left", padx=4, fill="x", expand=True)
-
-        self._update_status()
-
-    def _update_status(self):
-        total     = len(self._filtered)
-        total_all = len(self._all_files)
-        # Count selected across ALL files (not just filtered view)
-        total_sel = sum(1 for v in self._check_vars.values() if v.get())
-        # Count selected in current filtered view
-        filt_sel  = sum(
-            1 for f in self._filtered
-            if self._check_vars.get(f["filename"], ctk.BooleanVar()).get()
-        )
-        self.lbl_status.configure(
-            text=f"Showing {total} of {total_all} files  |  {filt_sel} shown selected  |  {total_sel} total selected"
-        )
-        if hasattr(self, "lbl_sel_count"):
-            self.lbl_sel_count.configure(text=f"{total_sel} selected")
-
-    # ── Type-aware select / clear (operates on filtered view) ─────────────────
-    def _select_by_ext(self, ext, select: bool):
-        """
-        Select or clear files currently visible in the list.
-        ext=None  → all visible files regardless of type.
-        ext='.nwc'/'.rvt'/'.ifc' → only that type in the visible list.
-        """
-        for f in self._filtered:
-            if ext is None or f["ext"] == ext:
-                if f["filename"] in self._check_vars:
-                    self._check_vars[f["filename"]].set(select)
-        self._update_status()
-
-    # ── Export ─────────────────────────────────────────────────────────────────
-    def _export_excel(self):
-        if not OPENPYXL_OK:
-            messagebox.showerror("Missing Library",
-                "openpyxl is required.\n\nRun:  pip install openpyxl", parent=self)
-            return
-        if not self._all_files:
-            messagebox.showwarning("Export", "No files scanned yet.", parent=self); return
-
-        path = filedialog.asksaveasfilename(
-            parent=self, defaultextension=".xlsx",
-            filetypes=[("Excel Workbook", "*.xlsx")],
-            initialfile=f"picklist2_{self.job.label.replace(' ','_')}.xlsx",
-        )
-        if not path: return
-
-        selected_names = {fn for fn, v in self._check_vars.items() if v.get()}
-
-        try:
-            wb = openpyxl.Workbook()
-            ws = wb.active
-            ws.title = "Latest File Picker"
-
-            thin       = Side(style="thin", color="B0C8B0")
-            brd        = Border(left=thin, right=thin, top=thin, bottom=thin)
-            hdr_fill   = PatternFill("solid", fgColor="2E7D32")
-            hdr_font   = Font(bold=True, color="FFFFFF", name="Arial", size=11)
-            hdr_align  = Alignment(horizontal="center", vertical="center")
-            sel_fill   = PatternFill("solid", fgColor="C8E6C9")
-            unsel_fill = PatternFill("solid", fgColor="F5F5F5")
-            sel_font   = Font(name="Consolas", size=10, color="1B5E20", bold=True)
-            unsel_font = Font(name="Consolas", size=10, color="757575")
-            tick_font  = Font(name="Arial",    size=11, color="2E7D32", bold=True)
-            cross_font = Font(name="Arial",    size=11, color="9E9E9E")
-
-            headers = ["Selected", "Type", "Filename", "Modified Date", "Full Path"]
-            ws.append(headers)
-            for cell in ws[1]:
-                cell.font = hdr_font; cell.fill = hdr_fill
-                cell.alignment = hdr_align; cell.border = brd
-            ws.row_dimensions[1].height = 22
-
-            ws.insert_rows(1)
-            ws.insert_rows(1)
-            ws["A1"] = f"Pick-list 2 Export — Job: {self.job.label}"
-            ws["A1"].font = Font(bold=True, size=13, color="1B5E20", name="Arial")
-            ws["A2"] = (
-                f"Exported: {datetime.now().strftime('%Y-%m-%d %H:%M')}    "
-                f"Total files: {len(self._all_files)}    "
-                f"Selected: {len(selected_names)}"
-            )
-            ws["A2"].font = Font(size=10, color="555555", name="Arial")
-            ws.merge_cells("A1:E1"); ws.merge_cells("A2:E2")
-
-            sorted_files = (
-                sorted([f for f in self._all_files if f["filename"] in selected_names],
-                       key=lambda x: x["mtime"], reverse=True)
-                + sorted([f for f in self._all_files if f["filename"] not in selected_names],
-                         key=lambda x: x["mtime"], reverse=True)
-            )
-
-            for f in sorted_files:
-                is_sel = f["filename"] in selected_names
-                ws.append([
-                    "YES  Selected" if is_sel else "—",
-                    f["ext"].upper().lstrip("."),
-                    f["filename"],
-                    f["mtime_str"],
-                    f["path"],
-                ])
-                r = ws.max_row
-                fill = sel_fill if is_sel else unsel_fill
-                for c_idx, cell in enumerate(ws[r], 1):
-                    cell.border = brd
-                    cell.fill   = fill
-                    cell.alignment = Alignment(vertical="center")
-                    if c_idx == 1:
-                        cell.font = tick_font if is_sel else cross_font
-                    elif c_idx == 3:
-                        cell.font = sel_font if is_sel else unsel_font
-                    else:
-                        cell.font = Font(name="Consolas", size=10,
-                                         color="1B5E20" if is_sel else "757575")
-
-            for col, w in zip("ABCDE", [16, 8, 50, 18, 80]):
-                ws.column_dimensions[col].width = w
-
-            wb.save(path)
-            messagebox.showinfo("Export Complete",
-                f"Exported {len(self._all_files)} files\n"
-                f"({len(selected_names)} selected, highlighted in green)\n\n{path}",
-                parent=self)
-        except Exception as exc:
-            messagebox.showerror("Export Error", str(exc), parent=self)
-
-    def _export_csv(self):
-        if not self._all_files:
-            messagebox.showwarning("Export", "No files scanned yet.", parent=self); return
-
-        path = filedialog.asksaveasfilename(
-            parent=self, defaultextension=".csv",
-            filetypes=[("CSV file", "*.csv")],
-            initialfile=f"picklist2_{self.job.label.replace(' ','_')}.csv",
-        )
-        if not path: return
-
-        selected_names = {fn for fn, v in self._check_vars.items() if v.get()}
-        sorted_files = (
-            sorted([f for f in self._all_files if f["filename"] in selected_names],
-                   key=lambda x: x["mtime"], reverse=True)
-            + sorted([f for f in self._all_files if f["filename"] not in selected_names],
-                     key=lambda x: x["mtime"], reverse=True)
-        )
-        try:
-            with open(path, "w", newline="", encoding="utf-8") as fh:
-                writer = csv.writer(fh)
-                writer.writerow(["selected", "type", "filename", "modified", "full_path"])
-                for fi in sorted_files:
-                    writer.writerow([
-                        "Yes" if fi["filename"] in selected_names else "No",
-                        fi["ext"].upper().lstrip("."),
-                        fi["filename"],
-                        fi["mtime_str"],
-                        fi["path"],
-                    ])
-            messagebox.showinfo("Export Complete",
-                f"Exported {len(sorted_files)} files\n"
-                f"({len(selected_names)} selected marked Yes)\n\n{path}",
-                parent=self)
-        except Exception as exc:
-            messagebox.showerror("Export Error", str(exc), parent=self)
-
-    # ── Apply / Cancel ─────────────────────────────────────────────────────────
-    def _apply(self):
-        self.result = [fn for fn, v in self._check_vars.items() if v.get()]
-        self.grab_release(); self.destroy()
 
     def _cancel(self):
         self.grab_release(); self.destroy()
@@ -1044,24 +518,12 @@ class JobRow(ctk.CTkFrame):
                                      text_color=COLORS["text_dim"] if not self.job.dest else COLORS["text"])
         self.lbl_dst.grid(row=2, column=2, padx=4, sticky="ew")
 
-        ctk.CTkButton(self, text="Pick-list 1", width=72, height=26, font=("Arial", 11),
+        ctk.CTkButton(self, text="Pick-list", width=72, height=26, font=("Arial", 11),
                       fg_color=COLORS["purple"], hover_color="#5b2c6f",
                       command=self._open_picklist).grid(row=3, column=1, padx=4, pady=(2, 2), sticky="w")
         self.lbl_picks = ctk.CTkLabel(self, text=self._picks_summary(), anchor="w",
                                        font=("Consolas", 10), text_color=COLORS["purple"])
-        self.lbl_picks.grid(row=3, column=2, padx=4, pady=(2, 2), sticky="ew")
-
-        # ── NEW: Pick-list 2 button ────────────────────────────────────────────
-        ctk.CTkButton(
-            self, text="Pick-list 2", width=72, height=26, font=("Arial", 11),
-            fg_color=COLORS["latest_hdr"], hover_color="#1b5e20",
-            command=self._open_latest_picker,
-        ).grid(row=4, column=1, padx=4, pady=(2, 10), sticky="w")
-        self.lbl_latest = ctk.CTkLabel(
-            self, text=self._latest_summary(), anchor="w",
-            font=("Consolas", 10), text_color=COLORS["latest_hdr"],
-        )
-        self.lbl_latest.grid(row=4, column=2, padx=4, pady=(2, 10), sticky="ew")
+        self.lbl_picks.grid(row=3, column=2, padx=4, pady=(2, 10), sticky="ew")
 
         time_frame = ctk.CTkFrame(self, fg_color="transparent")
         time_frame.grid(row=1, column=3, padx=8, pady=2, sticky="ew")
@@ -1148,7 +610,6 @@ class JobRow(ctk.CTkFrame):
                       font=("Arial", 12, "bold"),
                       command=lambda: self.app.remove_job(self.job)).pack()
 
-    # ── Summary helpers ────────────────────────────────────────────────────────
     def _sources_summary(self) -> str:
         n = len(self.job.sources)
         if n == 0: return "No sources added"
@@ -1162,13 +623,6 @@ class JobRow(ctk.CTkFrame):
         shown = ", ".join(picks[:6])
         return shown + (f"  (+{len(picks)-6} more)" if len(picks) > 6 else "")
 
-    def _latest_summary(self) -> str:
-        files = self.job.latest_files
-        if not files: return "No files selected  (click to pick latest .nwc .rvt .ifc)"
-        shown = ", ".join(files[:3])
-        return shown + (f"  (+{len(files)-3} more)" if len(files) > 3 else "")
-
-    # ── Button handlers ────────────────────────────────────────────────────────
     def _open_sources(self):
         dlg = SourcesDialog(self, self.job)
         self.wait_window(dlg)
@@ -1190,27 +644,7 @@ class JobRow(ctk.CTkFrame):
         if dlg.result is not None:
             self.job.pick_list = dlg.result
             self.lbl_picks.configure(text=self._picks_summary())
-            self.app._log(f"[{self.job.label}] Pick-list 1 → {', '.join(dlg.result)}")
-
-    def _open_latest_picker(self):
-        if not self.job.sources:
-            messagebox.showwarning(
-                "No Sources",
-                "Add source folders to this job first.\n"
-                "Then use Pick-list 2 to select the latest files.",
-                parent=self,
-            )
-            return
-        dlg = LatestFilePickerDialog(self, self.job)
-        self.wait_window(dlg)
-        if dlg.result is not None:
-            self.job.latest_files = dlg.result
-            self.lbl_latest.configure(text=self._latest_summary())
-            n = len(dlg.result)
-            self.app._log(
-                f"[{self.job.label}] Pick-list 2 → {n} file(s) selected: "
-                + (", ".join(dlg.result[:5]) + ("…" if n > 5 else ""))
-            )
+            self.app._log(f"[{self.job.label}] Pick-list → {', '.join(dlg.result)}")
 
     def _on_days_change(self):
         self.job.days = [d for d, v in self.day_vars.items() if v.get()]
@@ -1278,7 +712,7 @@ class JobRow(ctk.CTkFrame):
 class BIMAutomatorApp(ctk.CTk):
     def __init__(self):
         super().__init__()
-        self.title("BIM File Sync Automator v8.2")
+        self.title("BIM File Sync Automator v8.3")
         self.geometry("1120x900")
         self.minsize(940, 720)
         self.configure(fg_color="#d6e8f7")
@@ -1299,8 +733,11 @@ class BIMAutomatorApp(ctk.CTk):
         hdr.pack(fill="x", padx=24, pady=(16, 4))
         ctk.CTkLabel(hdr, text="BIM File Sync Automator",
                      font=("Arial", 22, "bold"), text_color=COLORS["blue"]).pack(side="left")
-        ctk.CTkLabel(hdr, text="v8.2", font=("Arial", 11),
+        ctk.CTkLabel(hdr, text="v8.3", font=("Arial", 11),
                      text_color=COLORS["text_dim"]).pack(side="left", padx=(6, 0), pady=(6, 0))
+        ctk.CTkLabel(hdr, text="Prepared by Ahmed Khalaf — BIM Manager",
+                     font=("Arial", 11, "italic"),
+                     text_color=COLORS["text_dim"]).pack(side="left", padx=(14, 0), pady=(6, 0))
         self.lbl_status = ctk.CTkLabel(hdr, text="● Idle", font=("Arial", 13),
                                         text_color=COLORS["text_dim"])
         self.lbl_status.pack(side="right")
@@ -1308,8 +745,7 @@ class BIMAutomatorApp(ctk.CTk):
         badge = ctk.CTkFrame(self, fg_color=COLORS["pick_bg"], corner_radius=6)
         badge.pack(fill="x", padx=24, pady=(0, 4))
         ctk.CTkLabel(badge,
-                     text="Pick-list 1:  .nwc  .ifc  .xlsx  (by BIM code)     │     "
-                          "Pick-list 2:  .nwc  .rvt  .ifc  (by latest file — newest first)",
+                     text="Pick-list:  .nwc  .ifc  .xlsx  (matched by BIM code in filename) — existing files overwritten",
                      font=("Consolas", 11, "bold"), text_color=COLORS["blue"]).pack(
                          side="left", padx=14, pady=6)
 
@@ -1373,7 +809,7 @@ class BIMAutomatorApp(ctk.CTk):
                                           border_width=1, border_color=COLORS["border"])
         self.log_output.pack(fill="x", padx=24, pady=6)
         self._log("System ready — add jobs or import from Excel / CSV.")
-        self._log("NEW v8.2: Pick-list 2 — click 'Pick-list 2' on any job to select latest .nwc .rvt .ifc files.")
+        self._log(f"Log file: {LOG_PATH}")
 
         btn_bar = ctk.CTkFrame(self, fg_color="transparent")
         btn_bar.pack(fill="x", padx=24, pady=(4, 16))
@@ -1397,12 +833,21 @@ class BIMAutomatorApp(ctk.CTk):
                       command=self._clear_log).pack(side="left", padx=6)
         ctk.CTkButton(btn_bar, text="Open Log", height=46, width=100,
                       fg_color="#6c7a89", hover_color="#5c6a79",
-                      command=self._open_log).pack(side="left", padx=(6, 0))
+                      command=self._open_log).pack(side="left", padx=6)
+        ctk.CTkButton(btn_bar, text="⟲  Reset All", height=46, width=120,
+                      font=("Arial", 12, "bold"),
+                      fg_color=COLORS["red"], hover_color=COLORS["red_h"],
+                      command=self._reset_all_settings).pack(side="left", padx=(6, 0))
+
+        footer = ctk.CTkFrame(self, fg_color="transparent")
+        footer.pack(fill="x", padx=24, pady=(0, 10))
+        ctk.CTkLabel(footer,
+                     text="BIM File Sync Automator v8.3   •   Prepared by Ahmed Khalaf — BIM Manager",
+                     font=("Arial", 10), text_color=COLORS["text_dim"]).pack(side="right")
 
         self.add_job()
 
-    # ── Job Management ─────────────────────────────────────────────────────────
-    def add_job(self, job: SyncJob = None) -> "JobRow":
+    def add_job(self, job: Optional[SyncJob] = None) -> "JobRow":
         if job is None:
             job = SyncJob(job_id=self._next_id, pick_list=list(DEFAULT_PICKS))
         else:
@@ -1426,7 +871,42 @@ class BIMAutomatorApp(ctk.CTk):
         for row in list(self.job_rows): row.destroy()
         self.jobs.clear(); self.job_rows.clear()
 
-    # ── Import / Export ────────────────────────────────────────────────────────
+    def _reset_all_settings(self):
+        """Wipe all jobs, stats, and the log, then start fresh with one default job."""
+        if not messagebox.askyesno(
+            "Reset All Settings",
+            f"This will remove all {len(self.jobs)} job(s), reset all counters, "
+            "and clear the on-screen log.\n\n"
+            "Your saved log file and any exported Excel/CSV files are NOT affected.\n\n"
+            "Continue?",
+        ):
+            return
+
+        # Stop the scheduler if it's running
+        if self.is_running:
+            self.is_running = False
+            with self._sched_lock:
+                schedule.clear()
+            self.btn_sched.configure(text="⏱  Start Scheduler",
+                                     fg_color=COLORS["blue"], hover_color=COLORS["blue_h"])
+
+        # Wipe jobs and reset id counter
+        self._clear_all_jobs()
+        self._next_id = 0
+
+        # Reset global stats
+        self.lbl_g_ok.configure(text="Total ✔ Copied: 0")
+        self.lbl_g_fail.configure(text="Total ✘ Failed: 0")
+        self.lbl_g_last.configure(text="Last global run: —")
+        self._set_status("● Idle", COLORS["text_dim"])
+
+        # Clear the on-screen log and start fresh
+        self.log_output.delete("0.0", "end")
+        self._log("All settings reset — starting fresh with one default job.")
+
+        # Add a single clean default job
+        self.add_job()
+
     def _export_excel(self):
         if not self.jobs:
             messagebox.showwarning("Export", "No jobs to export."); return
@@ -1480,15 +960,13 @@ class BIMAutomatorApp(ctk.CTk):
             for job in new_jobs:
                 self.add_job(job)
                 self._log(f"Imported: {job.label} | {len(job.sources)} src(s) | "
-                          f"{', '.join(job.days)} {job.exec_time} | "
-                          f"latest_files: {len(job.latest_files)}")
+                          f"{', '.join(job.days)} {job.exec_time}")
             mode = "replaced with" if replace else "merged +"
             messagebox.showinfo("Import Complete",
                                 f"Successfully {mode} {len(new_jobs)} job(s) from:\n{path}")
         except Exception as exc:
             self._log(f"Import error: {exc}"); messagebox.showerror("Import Error", str(exc))
 
-    # ── Logging ────────────────────────────────────────────────────────────────
     def _log(self, msg: str):
         ts = datetime.now().strftime("%H:%M:%S")
         self.log_output.insert("end", f"[{ts}] {msg}\n")
@@ -1498,15 +976,23 @@ class BIMAutomatorApp(ctk.CTk):
     def _clear_log(self):
         self.log_output.delete("0.0", "end"); self._log("Log cleared.")
 
-    def _open_log(self):
-        path = os.path.abspath("bim_sync_history.log")
-        if os.path.exists(path): os.startfile(path)
-        else: messagebox.showinfo("Log", "No log file found yet.")
+    @staticmethod
+    def _open_log():
+        # Open the log from its writable location (LOCALAPPDATA), not the installation dir.
+        path = LOG_PATH
+        if os.path.exists(path):
+            try:
+                os.startfile(path)                       # Windows
+            except AttributeError:
+                import subprocess, sys
+                opener = "open" if sys.platform == "darwin" else "xdg-open"
+                subprocess.Popen([opener, path])
+        else:
+            messagebox.showinfo("Log", f"No log file found yet.\n\nExpected at:\n{path}")
 
     def _set_status(self, text: str, color: str):
         self.lbl_status.configure(text=text, text_color=color)
 
-    # ── Core Sync ──────────────────────────────────────────────────────────────
     def _run_job(self, job: SyncJob):
         if not job.enabled:
             self._log(f"[{job.label}] Skipped (disabled)."); return
@@ -1514,10 +1000,10 @@ class BIMAutomatorApp(ctk.CTk):
             self._log(f"[{job.label}] ERROR: No source folders."); return
         if not job.dest:
             self._log(f"[{job.label}] ERROR: No destination selected."); return
-        if not job.pick_list and not job.latest_files:
-            self._log(f"[{job.label}] ERROR: No pick-list codes or files selected."); return
+        if not job.pick_list:
+            self._log(f"[{job.label}] ERROR: No pick-list codes selected."); return
 
-        dest_real = os.path.abspath(job.dest)  # plain path for destination — \\?\ prefix breaks shutil.copy2
+        dest_real = os.path.abspath(job.dest)
         try:
             os.makedirs(dest_real, exist_ok=True)
         except Exception as exc:
@@ -1526,13 +1012,6 @@ class BIMAutomatorApp(ctk.CTk):
             self._log(f"[{job.label}] ERROR: Destination not accessible '{job.dest}'."); return
 
         upper_picks = [c.upper() for c in job.pick_list]
-        latest_set  = set(job.latest_files)   # exact filenames from pick-list 2
-        # Derive which extensions PL2 selected — PL1 must respect this
-        pl2_exts = (
-            tuple({os.path.splitext(fn)[1].lower() for fn in job.latest_files
-                   if os.path.splitext(fn)[1].lower() in LATEST_PICK_EXTS})
-            if job.latest_files else None
-        )
 
         if job.auto_today:
             job.filter_date = datetime.now().strftime("%Y-%m-%d")
@@ -1544,7 +1023,7 @@ class BIMAutomatorApp(ctk.CTk):
 
         self._log(
             f"[{job.label}] ── Scan started | {len(job.sources)} src(s) | "
-            f"Pick-list 1 codes: {len(upper_picks)} | Pick-list 2 files: {len(latest_set)} | "
+            f"Pick-list codes: {len(upper_picks)} | "
             + (f"modified on/after: {job.filter_date}" if filter_dt else "no date filter")
         )
         ok = fail = 0
@@ -1560,31 +1039,14 @@ class BIMAutomatorApp(ctk.CTk):
                     ext_lower = filename.lower()
                     src = os.path.join(root, filename)
 
-                    # ── Determine if file matches either pick-list ─────────────
-                    # PL1: file extension must be in EXTENSIONS, code must match,
-                    #      AND if PL2 has selections, extension must match PL2 types
-                    pl1_ext_ok = ext_lower.endswith(EXTENSIONS)
-                    if pl2_exts:                        # PL2 is active — restrict PL1 ext
-                        pl1_ext_ok = ext_lower.endswith(pl2_exts)
-                    matched_pl1 = (
-                        pl1_ext_ok
+                    matched = (
+                        ext_lower.endswith(EXTENSIONS)
                         and upper_picks
                         and any(code in filename.upper() for code in upper_picks)
                     )
-                    # PL2: exact filename match AND extension must be a LATEST_PICK_EXT
-                    matched_pl2 = (
-                        filename in latest_set
-                        and ext_lower.endswith(LATEST_PICK_EXTS)
-                    )
-
-                    if not matched_pl1 and not matched_pl2:
+                    if not matched:
                         continue
 
-                    match_tag = []
-                    if matched_pl1: match_tag.append("PL1")
-                    if matched_pl2: match_tag.append("PL2")
-
-                    # ── Date filter (applies to both pick-lists) ───────────────
                     if filter_dt is not None:
                         try:
                             file_mtime = datetime.fromtimestamp(os.path.getmtime(src))
@@ -1598,19 +1060,14 @@ class BIMAutomatorApp(ctk.CTk):
                             continue
 
                     dst = os.path.join(dest_real, filename)
-                    # Strip \\?\ prefix from src before copy — shutil.copy2
-                    # and os.makedirs reject it on destination paths
                     src_copy = src.lstrip("\\\\?\\") if src.startswith("\\\\?\\") else src
-                    try:
-                        if os.path.exists(dst) and os.path.getmtime(src_copy) <= os.path.getmtime(dst):
-                            self._log(f"[{job.label}]   Skipped (up-to-date): {filename}")
-                            continue
-                    except Exception:
-                        pass
 
+                    # Always copy — existing destination files are overwritten.
                     try:
+                        overwrote = os.path.exists(dst)
                         shutil.copy2(src_copy, dst)
-                        self._log(f"[{job.label}]   ✔ Copied [{'/'.join(match_tag)}]: {filename}")
+                        action = "Overwrote" if overwrote else "Copied"
+                        self._log(f"[{job.label}]   ✔ {action}: {filename}")
                         ok += 1
                     except Exception as exc:
                         self._log(f"[{job.label}]   ✘ Failed: {filename} — {exc}")
@@ -1631,7 +1088,6 @@ class BIMAutomatorApp(ctk.CTk):
         self.lbl_g_fail.configure(text=f"Total ✘ Failed: {total_fail}")
         self.lbl_g_last.configure(text=f"Last global run: {datetime.now().strftime('%H:%M:%S')}")
 
-    # ── Execution ──────────────────────────────────────────────────────────────
     def _run_all_jobs(self):
         self._set_status("● Running", COLORS["orange"])
         for job in list(self.jobs): self._run_job(job)
@@ -1656,8 +1112,8 @@ class BIMAutomatorApp(ctk.CTk):
                     errors.append(f"{job.label}: invalid time '{job.exec_time}'.")
                 if not job.days:
                     errors.append(f"{job.label}: no days selected.")
-                if not job.pick_list and not job.latest_files:
-                    errors.append(f"{job.label}: both pick-lists are empty.")
+                if not job.pick_list:
+                    errors.append(f"{job.label}: pick-list is empty.")
             if errors:
                 messagebox.showerror("Scheduler Errors", "\n".join(errors)); return
             self.is_running = True
