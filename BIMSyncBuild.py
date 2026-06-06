@@ -1,11 +1,18 @@
-"""
-BIM File Sync Automator  v8.3  —  Light Blue Theme
+r"""
+BIM File Sync Automator  v8.4  —  Light Blue Theme
 Prepared by Ahmed Khalaf — BIM Manager
 ─────────────────────────────────────────────────────────────────────────────
 Full white / light blue color scheme.
 Copies .nwc  .ifc  .xlsx files.
 All features preserved: multi-job, multi-source, pick-list, schedule,
 import/export Excel & CSV.
+
+CHANGE (v8.4): Overwrite of existing destination files is now reliable on
+               Windows long paths and UNC shares.
+               - Destination root is now \\?\ long-path prefixed (was source-only).
+               - Removed the broken `src.lstrip("\\?\\")` line (lstrip strips a
+                 CHARACTER SET, not a prefix — it mangled UNC paths). shutil.copy2
+                 handles \\?\-prefixed paths directly and overwrites by default.
 
 CHANGE (v8.3): Files now always overwrite existing files at the destination.
                The previous "skip if up-to-date" guard has been removed.
@@ -712,7 +719,7 @@ class JobRow(ctk.CTkFrame):
 class BIMAutomatorApp(ctk.CTk):
     def __init__(self):
         super().__init__()
-        self.title("BIM File Sync Automator v8.3")
+        self.title("BIM File Sync Automator v8.4")
         self.geometry("1120x900")
         self.minsize(940, 720)
         self.configure(fg_color="#d6e8f7")
@@ -733,7 +740,7 @@ class BIMAutomatorApp(ctk.CTk):
         hdr.pack(fill="x", padx=24, pady=(16, 4))
         ctk.CTkLabel(hdr, text="BIM File Sync Automator",
                      font=("Arial", 22, "bold"), text_color=COLORS["blue"]).pack(side="left")
-        ctk.CTkLabel(hdr, text="v8.3", font=("Arial", 11),
+        ctk.CTkLabel(hdr, text="v8.4", font=("Arial", 11),
                      text_color=COLORS["text_dim"]).pack(side="left", padx=(6, 0), pady=(6, 0))
         ctk.CTkLabel(hdr, text="Prepared by Ahmed Khalaf — BIM Manager",
                      font=("Arial", 11, "italic"),
@@ -842,7 +849,7 @@ class BIMAutomatorApp(ctk.CTk):
         footer = ctk.CTkFrame(self, fg_color="transparent")
         footer.pack(fill="x", padx=24, pady=(0, 10))
         ctk.CTkLabel(footer,
-                     text="BIM File Sync Automator v8.3   •   Prepared by Ahmed Khalaf — BIM Manager",
+                     text="BIM File Sync Automator v8.4   •   Prepared by Ahmed Khalaf — BIM Manager",
                      font=("Arial", 10), text_color=COLORS["text_dim"]).pack(side="right")
 
         self.add_job()
@@ -1004,11 +1011,12 @@ class BIMAutomatorApp(ctk.CTk):
             self._log(f"[{job.label}] ERROR: No pick-list codes selected."); return
 
         dest_real = os.path.abspath(job.dest)
+        dest_long = _long_path(dest_real)          # long-path safe destination root
         try:
-            os.makedirs(dest_real, exist_ok=True)
+            os.makedirs(dest_long, exist_ok=True)
         except Exception as exc:
             self._log(f"[{job.label}] ERROR: Cannot create destination '{job.dest}' — {exc}"); return
-        if not os.path.isdir(dest_real):
+        if not os.path.isdir(dest_long):
             self._log(f"[{job.label}] ERROR: Destination not accessible '{job.dest}'."); return
 
         upper_picks = [c.upper() for c in job.pick_list]
@@ -1059,13 +1067,13 @@ class BIMAutomatorApp(ctk.CTk):
                             )
                             continue
 
-                    dst = os.path.join(dest_real, filename)
-                    src_copy = src.lstrip("\\\\?\\") if src.startswith("\\\\?\\") else src
+                    # Long-path safe on BOTH ends. shutil.copy2 overwrites any
+                    # existing file at the destination by default.
+                    dst = os.path.join(dest_long, filename)
 
-                    # Always copy — existing destination files are overwritten.
                     try:
                         overwrote = os.path.exists(dst)
-                        shutil.copy2(src_copy, dst)
+                        shutil.copy2(src, dst)
                         action = "Overwrote" if overwrote else "Copied"
                         self._log(f"[{job.label}]   ✔ {action}: {filename}")
                         ok += 1
