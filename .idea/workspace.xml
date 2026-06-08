@@ -1,0 +1,283 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="AutoImportSettings">
+    <option name="autoReloadType" value="SELECTIVE" />
+  </component>
+  <component name="ChangeListManager">
+    <list default="true" id="2dcf1307-3211-42fb-b012-bc59d6a8b23b" name="Changes" comment="first commit 1">
+      <change beforePath="$PROJECT_DIR$/.idea/.gitignore" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/ACC Copy files.iml" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/inspectionProfiles/profiles_settings.xml" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/misc.xml" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/modules.xml" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/vcs.xml" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/BIMSyncBuild.py" beforeDir="false" afterPath="$PROJECT_DIR$/Bim sync automator.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/BIMSyncBuild.spec" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/bim_sync_history.log" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/build/BIMSyncBuild/Analysis-00.toc" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/build/BIMSyncBuild/BIMSyncBuild.pkg" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/build/BIMSyncBuild/EXE-00.toc" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/build/BIMSyncBuild/PKG-00.toc" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/build/BIMSyncBuild/PYZ-00.pyz" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/build/BIMSyncBuild/PYZ-00.toc" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/build/BIMSyncBuild/base_library.zip" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/build/BIMSyncBuild/warn-BIMSyncBuild.txt" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/build/BIMSyncBuild/xref-BIMSyncBuild.html" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/dist/BIMSyncBuild.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/out/BIMSyncBuild_Setup.exe" beforeDir="false" />
+    </list>
+    <option name="SHOW_DIALOG" value="false" />
+    <option name="HIGHLIGHT_CONFLICTS" value="true" />
+    <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
+    <option name="LAST_RESOLUTION" value="IGNORE" />
+  </component>
+  <component name="EmbeddingIndexingInfo">
+    <option name="cachedIndexableFilesCount" value="22" />
+  </component>
+  <component name="Git.Settings">
+    <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
+  </component>
+  <component name="GitHubPullRequestSearchHistory">{
+  &quot;lastFilter&quot;: {
+    &quot;state&quot;: &quot;OPEN&quot;,
+    &quot;assignee&quot;: &quot;engahmedkhalaf&quot;
+  }
+}</component>
+  <component name="GithubPullRequestsUISettings">{
+  &quot;selectedUrlAndAccountId&quot;: {
+    &quot;url&quot;: &quot;https://github.com/engahmedkhalaf/APP-KHALAF-BIM.git&quot;,
+    &quot;accountId&quot;: &quot;4469be7d-44af-4354-a050-b66df3e71a23&quot;
+  }
+}</component>
+  <component name="McpProjectServerCommands">
+    <commands />
+    <urls />
+  </component>
+  <component name="NextEditCompletionFeaturesState">
+    <decayedCancelled>
+      <entry key="MS100" value="1.0758871802746903" />
+      <entry key="MS500" value="1.5970815952913813" />
+      <entry key="S2" value="1.89377985638404" />
+      <entry key="S5" value="2.372554837052304" />
+      <entry key="S10" value="3.5242852998774983" />
+      <entry key="S30" value="6.115665452786985" />
+      <entry key="S60" value="7.350835524455545" />
+      <entry key="M2" value="8.11534254312031" />
+      <entry key="M5" value="8.630491076804866" />
+      <entry key="M10" value="8.81252791763098" />
+      <entry key="M15" value="8.874406260866321" />
+      <entry key="M30" value="8.936894817473583" />
+      <entry key="H1" value="8.968369926986679" />
+      <entry key="H2" value="8.984165542377049" />
+      <entry key="H4" value="8.992077909559544" />
+      <entry key="D1" value="8.99867897582735" />
+      <entry key="W1" value="8.99981126570464" />
+    </decayedCancelled>
+    <decayedSelected>
+      <entry key="MS100" value="0.0" />
+      <entry key="MS500" value="0.0" />
+      <entry key="S2" value="0.0" />
+      <entry key="S5" value="0.0" />
+      <entry key="S10" value="0.0" />
+      <entry key="S30" value="0.0" />
+      <entry key="S60" value="0.0" />
+      <entry key="M2" value="0.0" />
+      <entry key="M5" value="0.0" />
+      <entry key="M10" value="0.0" />
+      <entry key="M15" value="0.0" />
+      <entry key="M30" value="0.0" />
+      <entry key="H1" value="0.0" />
+      <entry key="H2" value="0.0" />
+      <entry key="H4" value="0.0" />
+      <entry key="D1" value="0.0" />
+      <entry key="W1" value="0.0" />
+    </decayedSelected>
+    <decayedShown>
+      <entry key="MS100" value="1.0320599684795426" />
+      <entry key="MS500" value="1.5838525383440596" />
+      <entry key="S2" value="1.8896844624331286" />
+      <entry key="S5" value="2.3686377265092675" />
+      <entry key="S10" value="3.519186273444616" />
+      <entry key="S30" value="6.111554535715943" />
+      <entry key="S60" value="7.348201623438301" />
+      <entry key="M2" value="8.11384627436293" />
+      <entry key="M5" value="8.62984419657315" />
+      <entry key="M10" value="8.812195927404995" />
+      <entry key="M15" value="8.874182996212973" />
+      <entry key="M30" value="8.936782206609825" />
+      <entry key="H1" value="8.96831337510114" />
+      <entry key="H2" value="8.984137204592045" />
+      <entry key="H4" value="8.992063725177793" />
+      <entry key="D1" value="8.998676609610001" />
+      <entry key="W1" value="8.999810927620814" />
+    </decayedShown>
+  </component>
+  <component name="ProblemsViewState">
+    <option name="selectedTabId" value="CurrentFile" />
+  </component>
+  <component name="ProjectColorInfo">{
+  &quot;associatedIndex&quot;: 7,
+  &quot;fromUser&quot;: false
+}</component>
+  <component name="ProjectId" id="3EkfsA2uxcKXGUhe0wa7BlDq25x" />
+  <component name="ProjectViewState">
+    <option name="hideEmptyMiddlePackages" value="true" />
+    <option name="showLibraryContents" value="true" />
+  </component>
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "ModuleVcsDetector.initialDetectionPerformed": "true",
+    "Python.BIMFOLDERCOPYFILES.executor": "Run",
+    "Python.BIMSyncBuild.executor": "Run",
+    "Python.Weekly file copier gui.executor": "Run",
+    "RunOnceActivity.MCP Project settings loaded": "true",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252": "true",
+    "RunOnceActivity.git.unshallow": "true",
+    "RunOnceActivity.typescript.service.memoryLimit.init": "true",
+    "codeWithMe.voiceChat.enabledByDefault": "false",
+    "com.intellij.ml.llm.matterhorn.ej.ui.settings.DefaultModelSelectionForGA.v1": "true",
+    "git-widget-placeholder": "main",
+    "ignore.virus.scanning.warn.message": "true",
+    "junie.onboarding.icon.badge.shown": "true",
+    "node.js.detected.package.eslint": "true",
+    "node.js.detected.package.tslint": "true",
+    "node.js.selected.package.eslint": "(autodetect)",
+    "node.js.selected.package.tslint": "(autodetect)",
+    "nodejs_package_manager_path": "npm",
+    "settings.editor.selected.configurable": "org.jetbrains.plugins.github.ui.GithubSettingsConfigurable",
+    "to.speed.mode.migration.done": "true"
+  }
+}]]></component>
+  <component name="SharedIndexes">
+    <attachedChunks>
+      <set>
+        <option value="bundled-python-sdk-c59985aa861c-c2ffad84badb-com.jetbrains.pycharm.pro.sharedIndexes.bundled-PY-261.24374.152" />
+      </set>
+    </attachedChunks>
+  </component>
+  <component name="TaskManager">
+    <task active="true" id="Default" summary="Default task">
+      <changelist id="2dcf1307-3211-42fb-b012-bc59d6a8b23b" name="Changes" comment="" />
+      <created>1780727691892</created>
+      <option name="number" value="Default" />
+      <option name="presentableId" value="Default" />
+      <updated>1780727691892</updated>
+    </task>
+    <task id="LOCAL-00001" summary="first commit">
+      <option name="closed" value="true" />
+      <created>1780728937586</created>
+      <option name="number" value="00001" />
+      <option name="presentableId" value="LOCAL-00001" />
+      <option name="project" value="LOCAL" />
+      <updated>1780728937587</updated>
+    </task>
+    <task id="LOCAL-00002" summary="first commit">
+      <option name="closed" value="true" />
+      <created>1780729506281</created>
+      <option name="number" value="00002" />
+      <option name="presentableId" value="LOCAL-00002" />
+      <option name="project" value="LOCAL" />
+      <updated>1780729506281</updated>
+    </task>
+    <task id="LOCAL-00003" summary="first commit">
+      <option name="closed" value="true" />
+      <created>1780729805112</created>
+      <option name="number" value="00003" />
+      <option name="presentableId" value="LOCAL-00003" />
+      <option name="project" value="LOCAL" />
+      <updated>1780729805112</updated>
+    </task>
+    <task id="LOCAL-00004" summary="first commit">
+      <option name="closed" value="true" />
+      <created>1780733886453</created>
+      <option name="number" value="00004" />
+      <option name="presentableId" value="LOCAL-00004" />
+      <option name="project" value="LOCAL" />
+      <updated>1780733886453</updated>
+    </task>
+    <task id="LOCAL-00005" summary="first commit">
+      <option name="closed" value="true" />
+      <created>1780733980763</created>
+      <option name="number" value="00005" />
+      <option name="presentableId" value="LOCAL-00005" />
+      <option name="project" value="LOCAL" />
+      <updated>1780733980763</updated>
+    </task>
+    <task id="LOCAL-00006" summary="first commit">
+      <option name="closed" value="true" />
+      <created>1780733983382</created>
+      <option name="number" value="00006" />
+      <option name="presentableId" value="LOCAL-00006" />
+      <option name="project" value="LOCAL" />
+      <updated>1780733983382</updated>
+    </task>
+    <task id="LOCAL-00007" summary="first commit">
+      <option name="closed" value="true" />
+      <created>1780734423532</created>
+      <option name="number" value="00007" />
+      <option name="presentableId" value="LOCAL-00007" />
+      <option name="project" value="LOCAL" />
+      <updated>1780734423532</updated>
+    </task>
+    <task id="LOCAL-00008" summary="first commit">
+      <option name="closed" value="true" />
+      <created>1780734457526</created>
+      <option name="number" value="00008" />
+      <option name="presentableId" value="LOCAL-00008" />
+      <option name="project" value="LOCAL" />
+      <updated>1780734457526</updated>
+    </task>
+    <task id="LOCAL-00009" summary="first commit">
+      <option name="closed" value="true" />
+      <created>1780736055167</created>
+      <option name="number" value="00009" />
+      <option name="presentableId" value="LOCAL-00009" />
+      <option name="project" value="LOCAL" />
+      <updated>1780736055167</updated>
+    </task>
+    <task id="LOCAL-00010" summary="first commit">
+      <option name="closed" value="true" />
+      <created>1780743241041</created>
+      <option name="number" value="00010" />
+      <option name="presentableId" value="LOCAL-00010" />
+      <option name="project" value="LOCAL" />
+      <updated>1780743241041</updated>
+    </task>
+    <task id="LOCAL-00011" summary="first commit">
+      <option name="closed" value="true" />
+      <created>1780752665889</created>
+      <option name="number" value="00011" />
+      <option name="presentableId" value="LOCAL-00011" />
+      <option name="project" value="LOCAL" />
+      <updated>1780752665890</updated>
+    </task>
+    <task id="LOCAL-00012" summary="first commit">
+      <option name="closed" value="true" />
+      <created>1780839197406</created>
+      <option name="number" value="00012" />
+      <option name="presentableId" value="LOCAL-00012" />
+      <option name="project" value="LOCAL" />
+      <updated>1780839197406</updated>
+    </task>
+    <task id="LOCAL-00013" summary="first commit 1">
+      <option name="closed" value="true" />
+      <created>1780839221709</created>
+      <option name="number" value="00013" />
+      <option name="presentableId" value="LOCAL-00013" />
+      <option name="project" value="LOCAL" />
+      <updated>1780839221709</updated>
+    </task>
+    <option name="localTasksCounter" value="14" />
+    <servers />
+  </component>
+  <component name="TypeScriptGeneratedFilesManager">
+    <option name="version" value="3" />
+  </component>
+  <component name="VcsManagerConfiguration">
+    <MESSAGE value="first commit 4" />
+    <MESSAGE value="first commit" />
+    <MESSAGE value="first commit 1" />
+    <option name="LAST_COMMIT_MESSAGE" value="first commit 1" />
+  </component>
+</project>
