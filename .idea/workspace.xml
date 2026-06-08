@@ -4,28 +4,7 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="2dcf1307-3211-42fb-b012-bc59d6a8b23b" name="Changes" comment="first commit 1">
-      <change beforePath="$PROJECT_DIR$/.idea/.gitignore" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/ACC Copy files.iml" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/inspectionProfiles/profiles_settings.xml" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/misc.xml" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/modules.xml" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/vcs.xml" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/BIMSyncBuild.py" beforeDir="false" afterPath="$PROJECT_DIR$/Bim sync automator.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/BIMSyncBuild.spec" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/bim_sync_history.log" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/build/BIMSyncBuild/Analysis-00.toc" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/build/BIMSyncBuild/BIMSyncBuild.pkg" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/build/BIMSyncBuild/EXE-00.toc" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/build/BIMSyncBuild/PKG-00.toc" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/build/BIMSyncBuild/PYZ-00.pyz" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/build/BIMSyncBuild/PYZ-00.toc" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/build/BIMSyncBuild/base_library.zip" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/build/BIMSyncBuild/warn-BIMSyncBuild.txt" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/build/BIMSyncBuild/xref-BIMSyncBuild.html" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/dist/BIMSyncBuild.exe" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/out/BIMSyncBuild_Setup.exe" beforeDir="false" />
-    </list>
+    <list default="true" id="2dcf1307-3211-42fb-b012-bc59d6a8b23b" name="Changes" comment="first commit" />
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -55,23 +34,23 @@
   </component>
   <component name="NextEditCompletionFeaturesState">
     <decayedCancelled>
-      <entry key="MS100" value="1.0758871802746903" />
-      <entry key="MS500" value="1.5970815952913813" />
-      <entry key="S2" value="1.89377985638404" />
-      <entry key="S5" value="2.372554837052304" />
-      <entry key="S10" value="3.5242852998774983" />
-      <entry key="S30" value="6.115665452786985" />
-      <entry key="S60" value="7.350835524455545" />
-      <entry key="M2" value="8.11534254312031" />
-      <entry key="M5" value="8.630491076804866" />
-      <entry key="M10" value="8.81252791763098" />
-      <entry key="M15" value="8.874406260866321" />
-      <entry key="M30" value="8.936894817473583" />
-      <entry key="H1" value="8.968369926986679" />
-      <entry key="H2" value="8.984165542377049" />
-      <entry key="H4" value="8.992077909559544" />
-      <entry key="D1" value="8.99867897582735" />
-      <entry key="W1" value="8.99981126570464" />
+      <entry key="MS100" value="1.0" />
+      <entry key="MS500" value="1.0" />
+      <entry key="S2" value="1.0" />
+      <entry key="S5" value="1.0" />
+      <entry key="S10" value="1.0" />
+      <entry key="S30" value="1.0" />
+      <entry key="S60" value="1.0000000042966466" />
+      <entry key="M2" value="1.0001962019487205" />
+      <entry key="M5" value="1.1228553552767515" />
+      <entry key="M10" value="2.0514286286858567" />
+      <entry key="M15" value="3.150761074499615" />
+      <entry key="M30" value="5.399598823752462" />
+      <entry key="H1" value="7.292550782132713" />
+      <entry key="H2" value="8.525482554775369" />
+      <entry key="H4" value="9.229782637566446" />
+      <entry key="D1" value="9.866797894004755" />
+      <entry key="W1" value="9.980849306035202" />
     </decayedCancelled>
     <decayedSelected>
       <entry key="MS100" value="0.0" />
@@ -93,23 +72,23 @@
       <entry key="W1" value="0.0" />
     </decayedSelected>
     <decayedShown>
-      <entry key="MS100" value="1.0320599684795426" />
-      <entry key="MS500" value="1.5838525383440596" />
-      <entry key="S2" value="1.8896844624331286" />
-      <entry key="S5" value="2.3686377265092675" />
-      <entry key="S10" value="3.519186273444616" />
-      <entry key="S30" value="6.111554535715943" />
-      <entry key="S60" value="7.348201623438301" />
-      <entry key="M2" value="8.11384627436293" />
-      <entry key="M5" value="8.62984419657315" />
-      <entry key="M10" value="8.812195927404995" />
-      <entry key="M15" value="8.874182996212973" />
-      <entry key="M30" value="8.936782206609825" />
-      <entry key="H1" value="8.96831337510114" />
-      <entry key="H2" value="8.984137204592045" />
-      <entry key="H4" value="8.992063725177793" />
-      <entry key="D1" value="8.998676609610001" />
-      <entry key="W1" value="8.999810927620814" />
+      <entry key="MS100" value="0.8179020585577811" />
+      <entry key="MS500" value="0.9605948639534766" />
+      <entry key="S2" value="0.9899997047180724" />
+      <entry key="S5" value="0.9959878167538044" />
+      <entry key="S10" value="0.99799189212829" />
+      <entry key="S30" value="0.9993301821536553" />
+      <entry key="S60" value="0.999665039271151" />
+      <entry key="M2" value="1.000028669234403" />
+      <entry key="M5" value="1.1227791449303368" />
+      <entry key="M10" value="2.051355517156329" />
+      <entry key="M15" value="3.1506846305921705" />
+      <entry key="M30" value="5.399532218550006" />
+      <entry key="H1" value="7.292505519500453" />
+      <entry key="H2" value="8.525456026117975" />
+      <entry key="H4" value="9.229768259732397" />
+      <entry key="D1" value="9.866795329812213" />
+      <entry key="W1" value="9.980848935427472" />
     </decayedShown>
   </component>
   <component name="ProblemsViewState">
@@ -268,7 +247,23 @@
       <option name="project" value="LOCAL" />
       <updated>1780839221709</updated>
     </task>
-    <option name="localTasksCounter" value="14" />
+    <task id="LOCAL-00014" summary="first commit">
+      <option name="closed" value="true" />
+      <created>1780898210451</created>
+      <option name="number" value="00014" />
+      <option name="presentableId" value="LOCAL-00014" />
+      <option name="project" value="LOCAL" />
+      <updated>1780898210451</updated>
+    </task>
+    <task id="LOCAL-00015" summary="first commit">
+      <option name="closed" value="true" />
+      <created>1780898249459</created>
+      <option name="number" value="00015" />
+      <option name="presentableId" value="LOCAL-00015" />
+      <option name="project" value="LOCAL" />
+      <updated>1780898249459</updated>
+    </task>
+    <option name="localTasksCounter" value="16" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -276,8 +271,9 @@
   </component>
   <component name="VcsManagerConfiguration">
     <MESSAGE value="first commit 4" />
-    <MESSAGE value="first commit" />
     <MESSAGE value="first commit 1" />
-    <option name="LAST_COMMIT_MESSAGE" value="first commit 1" />
+    <MESSAGE value="first commitd" />
+    <MESSAGE value="first commit" />
+    <option name="LAST_COMMIT_MESSAGE" value="first commit" />
   </component>
 </project>
