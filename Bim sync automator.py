@@ -1,5 +1,5 @@
 r"""
-BIM File Sync Automator  v8.5  —  Light Blue Theme
+BIM File Sync Automator  v8.6  —  Light Blue Theme
 Prepared by Ahmed Khalaf — BIM Manager
 ─────────────────────────────────────────────────────────────────────────────
 Full white / light blue color scheme.
@@ -7,36 +7,36 @@ Copies .nwc  .ifc  .xlsx files.
 All features preserved: multi-job, multi-source, pick-list, schedule,
 import/export Excel & CSV.
 
+CHANGE (v8.6): Overwrite of existing destination files now works reliably even
+               when the existing file is READ-ONLY.
+               - New _force_overwrite_copy() clears the read-only attribute on
+                 the old file (and deletes it) before copying, then clears
+                 read-only on the new file too — so copy2 inheriting the
+                 source's read-only bit can't block the NEXT run.
+               - This is the usual reason a file "won't overwrite": .nwc/.ifc
+                 exports often arrive read-only, and shutil.copy2 then raises
+                 PermissionError on exactly the files that already exist.
+
+CHANGE (v8.6): _long_path() now builds the CORRECT extended-length prefix for
+               UNC shares:  \\server\share  ->  \\?\UNC\server\share
+               (previously produced the invalid \\?\\\server\share, which made
+               copies to network destinations fail outright).
+
+CHANGE (v8.6): Excel export header cells now use real PatternFill / Font
+               INSTANCES (the previous code assigned the classes themselves,
+               which crashed export). Minor linter cleanups too.
+
 CHANGE (v8.5): Clear handling of unavailable drives / network shares.
-               - A disconnected mapped drive (e.g. Z:\ unavailable) now logs a
-                 specific reason and tells you to reconnect it or use the
-                 \\server\share UNC path, instead of a vague "missing folder".
-               - Unreachable UNC shares and missing folders are reported
-                 distinctly.
-               - A job whose sources are all unreachable now logs a clear
-                 warning instead of looking like a successful "Copied 0" run.
-               - Destination on a disconnected drive is reported before the app
-                 tries (and fails) to create folders on it.
-
-CHANGE (v8.5): Overwrite of existing destination files is now reliable on
-               Windows long paths and UNC shares.
-               - Destination root is now \\?\ long-path prefixed (was source-only).
-               - Removed the broken `src.lstrip("\\?\\")` line (lstrip strips a
-                 CHARACTER SET, not a prefix — it mangled UNC paths). shutil.copy2
-                 handles \\?\-prefixed paths directly and overwrites by default.
-
 CHANGE (v8.3): Files now always overwrite existing files at the destination.
-               The previous "skip if up-to-date" guard has been removed.
-
 FIX: Long Windows path support (\\?\\ prefix) + os.makedirs on destination.
-FIX: Log file now written to a per-user writable location instead of the
-     installation directory (avoids PermissionError under C:\\Program Files).
+FIX: Log file now written to a per-user writable location.
 ─────────────────────────────────────────────────────────────────────────────
 """
 
 import csv
 import os
 import shutil
+import stat
 import schedule
 import time
 import threading
@@ -75,7 +75,7 @@ def _resolve_log_path() -> str:
     log_dir = os.path.join(base, "BIMSyncBuild", "logs")
     try:
         os.makedirs(log_dir, exist_ok=True)
-    except Exception:
+    except OSError:
         # Last-resort fallback: temp dir (always writable)
         import tempfile
         log_dir = os.path.join(tempfile.gettempdir(), "BIMSyncBuild")
@@ -148,10 +148,44 @@ def _split(s: str) -> List[str]:
 
 
 def _long_path(path: str) -> str:
-    """Prefix path with \\?\\ on Windows to support paths longer than 260 chars."""
-    if os.name == 'nt' and not path.startswith("\\\\?\\"):
-        return "\\\\?\\" + os.path.abspath(path)
-    return path
+    """
+    Prefix path with the Windows extended-length form to support paths longer
+    than 260 chars. Handles UNC shares correctly:
+        C:\\folder         ->  \\?\\C:\\folder
+        \\\\server\\share  ->  \\?\\UNC\\server\\share
+    """
+    if os.name != "nt":
+        return path
+    abspath = os.path.abspath(path)
+    if abspath.startswith("\\\\?\\"):
+        return abspath
+    if abspath.startswith("\\\\"):              # UNC: \\server\share\...
+        return "\\\\?\\UNC\\" + abspath[2:]      # -> \\?\UNC\server\share\...
+    return "\\\\?\\" + abspath
+
+
+def _force_overwrite_copy(src: str, dst: str):
+    """
+    Copy src -> dst, reliably overwriting an existing destination file even if
+    it is marked read-only.
+
+    Why this exists: BIM exports (.nwc/.ifc) frequently carry the read-only
+    attribute. shutil.copy2 then fails with PermissionError when it tries to
+    open the existing destination for writing — so the file "won't overwrite".
+    On top of that, copy2 copies the source's read-only bit onto the new file,
+    which would block the NEXT run too. We clear read-only before and after.
+    """
+    if os.path.exists(dst):
+        try:
+            os.chmod(dst, stat.S_IWRITE)   # drop read-only on the old file
+            os.remove(dst)                 # delete first, then copy clean
+        except OSError:
+            pass                           # fall through; copy2 may still work
+    shutil.copy2(src, dst)
+    try:
+        os.chmod(dst, stat.S_IWRITE)       # keep the new file writable
+    except OSError:
+        pass
 
 
 def _diagnose_path(path: str):
@@ -257,12 +291,15 @@ class SyncJob:
 def export_excel(jobs: List[SyncJob], filepath: str):
     if not OPENPYXL_OK:
         raise ImportError("openpyxl not installed. Run: pip install openpyxl")
+    assert openpyxl is not None                      # narrow for type checkers
     wb = openpyxl.Workbook()
     ws = wb.active
+    assert ws is not None
     ws.title = "Sync Jobs"
 
-    hdr_fill  = PatternFill
-    hdr_font  = Font
+    # FIX (v8.6): use real INSTANCES, not the classes themselves.
+    hdr_fill  = PatternFill("solid", fgColor="1A6FA8")
+    hdr_font  = Font(name="Arial", size=11, bold=True, color="FFFFFF")
     hdr_align = Alignment(horizontal="center", vertical="center", wrap_text=True)
     thin      = Side(style="thin", color="B0B8C8")
     hdr_brd   = Border(left=thin, right=thin, top=thin, bottom=thin)
@@ -275,8 +312,10 @@ def export_excel(jobs: List[SyncJob], filepath: str):
     ]
     ws.append(headers)
     for cell in ws[1]:
-        cell.font = hdr_font; cell.fill = hdr_fill
-        cell.alignment = hdr_align; cell.border = hdr_brd
+        cell.font = hdr_font
+        cell.fill = hdr_fill
+        cell.alignment = hdr_align
+        cell.border = hdr_brd
     ws.row_dimensions[1].height = 36
 
     row_fills = ["EAF0FB", "F5F7FA"] * 8
@@ -290,7 +329,9 @@ def export_excel(jobs: List[SyncJob], filepath: str):
         ws.append([job.to_row()[c] for c in COLUMNS])
         fill = PatternFill("solid", fgColor=row_fills[r_idx % len(row_fills)])
         for c_idx, cell in enumerate(ws[r_idx], 1):
-            cell.fill = fill; cell.border = data_brd; cell.alignment = data_align
+            cell.fill = fill
+            cell.border = data_brd
+            cell.alignment = data_align
             cell.font = (yes_font if cell.value == "Yes" else no_font) if c_idx == 7 else data_font
 
     col_widths = [18, 50, 50, 12, 30, 40, 10, 14, 12]
@@ -313,9 +354,9 @@ def export_excel(jobs: List[SyncJob], filepath: str):
         "  auto_today   : Yes = use today's date at run time",
         "",
         "TIPS:",
-        "  • Pick-list: matches files containing BIM codes in their filename.",
-        "  • Files copied: .nwc  .ifc  .xlsx",
-        "  • Existing destination files are always overwritten.",
+        "  - Pick-list: matches files containing BIM codes in their filename.",
+        "  - Files copied: .nwc  .ifc  .xlsx",
+        "  - Existing destination files are always overwritten.",
     ]
     for row_i, line in enumerate(lines, 1):
         cell = inst.cell(row=row_i, column=1, value=line)
@@ -336,11 +377,14 @@ def export_csv(jobs: List[SyncJob], filepath: str):
 def import_excel(filepath: str) -> List[dict]:
     if not OPENPYXL_OK:
         raise ImportError("openpyxl not installed.")
+    assert openpyxl is not None
     wb = openpyxl.load_workbook(filepath, data_only=True)
     ws = wb["Sync Jobs"] if "Sync Jobs" in wb.sheetnames else wb.active
+    assert ws is not None
     rows = list(ws.iter_rows(values_only=True))
-    if not rows: return []
-    headers = [str(h).strip().lower().replace("\n","").replace(" ","_") if h else "" for h in rows[0]]
+    if not rows:
+        return []
+    headers = [str(h).strip().lower().replace("\n", "").replace(" ", "_") if h else "" for h in rows[0]]
     return [{headers[i]: (str(row[i]).strip() if row[i] is not None else "")
              for i in range(min(len(headers), len(row)))}
             for row in rows[1:] if not all(v is None for v in row)]
@@ -348,7 +392,7 @@ def import_excel(filepath: str) -> List[dict]:
 
 def import_csv(filepath: str) -> List[dict]:
     with open(filepath, newline="", encoding="utf-8") as f:
-        return [{k.strip().lower().replace(" ","_"): v.strip()
+        return [{k.strip().lower().replace(" ", "_"): v.strip()
                  for k, v in row.items()} for row in csv.DictReader(f)]
 
 
@@ -394,7 +438,8 @@ class SourcesDialog(ctk.CTkToplevel):
 
     def _add_source(self):
         path = filedialog.askdirectory(parent=self)
-        if not path: return
+        if not path:
+            return
         if path in self._paths:
             messagebox.showinfo("Duplicate", f"Already added:\n{path}", parent=self); return
         self._paths.append(path); self._add_row(path); self._refresh_count()
@@ -416,17 +461,19 @@ class SourcesDialog(ctk.CTkToplevel):
         self._rows.append(row)
 
     def _remove_row(self, path: str, row: ctk.CTkFrame):
-        if path in self._paths: self._paths.remove(path)
+        if path in self._paths:
+            self._paths.remove(path)
         row.destroy()
         self._rows = [r for r in self._rows if r.winfo_exists()]
         for i, r in enumerate(self._rows):
             w = r.winfo_children()
-            if w: w[0].configure(text=f"#{i+1}")
+            if w:
+                w[0].configure(text=f"#{i+1}")
         self._refresh_count()
 
     def _refresh_count(self):
         n = len(self._paths)
-        self.lbl_count.configure(text=f"{n} source folder{'s' if n!=1 else ''} configured")
+        self.lbl_count.configure(text=f"{n} source folder{'s' if n != 1 else ''} configured")
 
     def _apply(self):
         self.result = list(self._paths); self.grab_release(); self.destroy()
@@ -464,7 +511,7 @@ class PickListDialog(ctk.CTkToplevel):
                             font=("Consolas", 12, "bold"),
                             text_color=COLORS["text"],
                             checkbox_width=16, checkbox_height=16,
-                            ).grid(row=i//4, column=i%4, padx=14, pady=8, sticky="w")
+                            ).grid(row=i // 4, column=i % 4, padx=14, pady=8, sticky="w")
             self.cb_vars[code] = var
 
         qa = ctk.CTkFrame(self, fg_color="transparent")
@@ -508,7 +555,8 @@ class PickListDialog(ctk.CTkToplevel):
         codes = [c for c, v in self.cb_vars.items() if v.get()]
         for c in self.custom_entry.get().split(","):
             c = c.strip().upper()
-            if c and c not in codes: codes.append(c)
+            if c and c not in codes:
+                codes.append(c)
         return codes
 
     def _update_preview(self):
@@ -664,14 +712,16 @@ class JobRow(ctk.CTkFrame):
 
     def _sources_summary(self) -> str:
         n = len(self.job.sources)
-        if n == 0: return "No sources added"
+        if n == 0:
+            return "No sources added"
         first = self.job.sources[0]
         trimmed = first if len(first) <= 45 else "…" + first[-44:]
         return trimmed if n == 1 else f"{trimmed}  (+{n-1} more)"
 
     def _picks_summary(self) -> str:
         picks = self.job.pick_list
-        if not picks: return "⚠ No codes assigned"
+        if not picks:
+            return "⚠ No codes assigned"
         shown = ", ".join(picks[:6])
         return shown + (f"  (+{len(picks)-6} more)" if len(picks) > 6 else "")
 
@@ -682,7 +732,7 @@ class JobRow(ctk.CTkFrame):
             self.job.sources = dlg.result
             self.lbl_src.configure(text=self._sources_summary(),
                                     text_color=COLORS["teal"] if dlg.result else COLORS["text_dim"])
-            self.app._log(f"[{self.job.label}] Sources updated: {len(dlg.result)} folder(s).")
+            self.app.log(f"[{self.job.label}] Sources updated: {len(dlg.result)} folder(s).")
 
     def _pick_dest(self):
         path = filedialog.askdirectory()
@@ -696,7 +746,7 @@ class JobRow(ctk.CTkFrame):
         if dlg.result is not None:
             self.job.pick_list = dlg.result
             self.lbl_picks.configure(text=self._picks_summary())
-            self.app._log(f"[{self.job.label}] Pick-list → {', '.join(dlg.result)}")
+            self.app.log(f"[{self.job.label}] Pick-list → {', '.join(dlg.result)}")
 
     def _on_days_change(self):
         self.job.days = [d for d, v in self.day_vars.items() if v.get()]
@@ -744,7 +794,7 @@ class JobRow(ctk.CTkFrame):
 
     def _date_status_text(self) -> str:
         if self.job.auto_today:
-            return f"🔄 Auto Today — will use today's date at run time"
+            return "🔄 Auto Today — will use today's date at run time"
         fd = self.job.filter_date.strip()
         if not fd:
             return "No date filter — all files"
@@ -764,7 +814,7 @@ class JobRow(ctk.CTkFrame):
 class BIMAutomatorApp(ctk.CTk):
     def __init__(self):
         super().__init__()
-        self.title("BIM File Sync Automator v8.5")
+        self.title("BIM File Sync Automator v8.6")
         self.geometry("1120x900")
         self.minsize(940, 720)
         self.configure(fg_color="#d6e8f7")
@@ -785,7 +835,7 @@ class BIMAutomatorApp(ctk.CTk):
         hdr.pack(fill="x", padx=24, pady=(16, 4))
         ctk.CTkLabel(hdr, text="BIM File Sync Automator",
                      font=("Arial", 22, "bold"), text_color=COLORS["blue"]).pack(side="left")
-        ctk.CTkLabel(hdr, text="v8.5", font=("Arial", 11),
+        ctk.CTkLabel(hdr, text="v8.6", font=("Arial", 11),
                      text_color=COLORS["text_dim"]).pack(side="left", padx=(6, 0), pady=(6, 0))
         ctk.CTkLabel(hdr, text="Prepared by Ahmed Khalaf — BIM Manager",
                      font=("Arial", 11, "italic"),
@@ -894,10 +944,26 @@ class BIMAutomatorApp(ctk.CTk):
         footer = ctk.CTkFrame(self, fg_color="transparent")
         footer.pack(fill="x", padx=24, pady=(0, 10))
         ctk.CTkLabel(footer,
-                     text="BIM File Sync Automator v8.5   •   Prepared by Ahmed Khalaf — BIM Manager",
+                     text="BIM File Sync Automator v8.6   •   Prepared by Ahmed Khalaf — BIM Manager",
                      font=("Arial", 10), text_color=COLORS["text_dim"]).pack(side="right")
 
         self.add_job()
+
+        # Auto-start the scheduler shortly after launch (for autorun / .exe use).
+        # after() lets the window finish building first.
+        self.after(1500, self._autostart_scheduler)
+
+    def _autostart_scheduler(self):
+        """Start the scheduler automatically if at least one enabled job is ready."""
+        ready = any(
+            j.enabled and j.sources and j.dest and j.pick_list and validate_time(j.exec_time)
+            for j in self.jobs
+        )
+        if ready and not self.is_running:
+            self._log("Auto-start: configured job(s) found — starting scheduler.")
+            self.toggle_scheduler()
+        else:
+            self._log("Auto-start: no fully-configured job yet — scheduler idle.")
 
     def add_job(self, job: Optional[SyncJob] = None) -> "JobRow":
         if job is None:
@@ -915,12 +981,14 @@ class BIMAutomatorApp(ctk.CTk):
         if len(self.jobs) == 1:
             messagebox.showinfo("Remove Job", "At least one job must remain."); return
         idx = next((i for i, j in enumerate(self.jobs) if j is job), None)
-        if idx is None: return
+        if idx is None:
+            return
         self.jobs.pop(idx); self.job_rows.pop(idx).destroy()
         self._log(f"Removed {job.label}.")
 
     def _clear_all_jobs(self):
-        for row in list(self.job_rows): row.destroy()
+        for row in list(self.job_rows):
+            row.destroy()
         self.jobs.clear(); self.job_rows.clear()
 
     def _reset_all_settings(self):
@@ -968,12 +1036,13 @@ class BIMAutomatorApp(ctk.CTk):
         path = filedialog.asksaveasfilename(defaultextension=".xlsx",
                                              filetypes=[("Excel Workbook", "*.xlsx")],
                                              initialfile="bim_sync_jobs.xlsx")
-        if not path: return
+        if not path:
+            return
         try:
             export_excel(self.jobs, path)
             self._log(f"Exported {len(self.jobs)} job(s) → {path}")
             messagebox.showinfo("Export Complete", f"Exported {len(self.jobs)} job(s) to:\n{path}")
-        except Exception as exc:
+        except Exception as exc:                       # noqa: BLE001 - report any export failure
             self._log(f"Export error: {exc}"); messagebox.showerror("Export Error", str(exc))
 
     def _export_csv(self):
@@ -982,19 +1051,21 @@ class BIMAutomatorApp(ctk.CTk):
         path = filedialog.asksaveasfilename(defaultextension=".csv",
                                              filetypes=[("CSV file", "*.csv")],
                                              initialfile="bim_sync_jobs.csv")
-        if not path: return
+        if not path:
+            return
         try:
             export_csv(self.jobs, path)
             self._log(f"Exported {len(self.jobs)} job(s) → {path}")
             messagebox.showinfo("Export Complete", f"Exported {len(self.jobs)} job(s) to:\n{path}")
-        except Exception as exc:
+        except Exception as exc:                       # noqa: BLE001
             self._log(f"Export error: {exc}"); messagebox.showerror("Export Error", str(exc))
 
     def _import(self, replace: bool):
         path = filedialog.askopenfilename(
             filetypes=[("Excel / CSV", "*.xlsx *.csv"),
                        ("Excel Workbook", "*.xlsx"), ("CSV file", "*.csv")])
-        if not path: return
+        if not path:
+            return
         try:
             ext  = os.path.splitext(path)[1].lower()
             rows = import_excel(path) if ext == ".xlsx" else import_csv(path) if ext == ".csv" else None
@@ -1006,7 +1077,8 @@ class BIMAutomatorApp(ctk.CTk):
             if replace:
                 if not messagebox.askyesno("Import & Replace",
                     f"Remove all {len(self.jobs)} current job(s) and load "
-                    f"{len(new_jobs)} from file?\n\nContinue?"): return
+                    f"{len(new_jobs)} from file?\n\nContinue?"):
+                    return
                 self._clear_all_jobs()
                 self._log("All existing jobs cleared for replace-import.")
             for job in new_jobs:
@@ -1016,8 +1088,12 @@ class BIMAutomatorApp(ctk.CTk):
             mode = "replaced with" if replace else "merged +"
             messagebox.showinfo("Import Complete",
                                 f"Successfully {mode} {len(new_jobs)} job(s) from:\n{path}")
-        except Exception as exc:
+        except Exception as exc:                       # noqa: BLE001
             self._log(f"Import error: {exc}"); messagebox.showerror("Import Error", str(exc))
+
+    def log(self, msg: str):
+        """Public wrapper around _log so child widgets can log without touching a protected member."""
+        self._log(msg)
 
     def _log(self, msg: str):
         ts = datetime.now().strftime("%H:%M:%S")
@@ -1066,7 +1142,7 @@ class BIMAutomatorApp(ctk.CTk):
             return
         try:
             os.makedirs(dest_long, exist_ok=True)
-        except Exception as exc:
+        except OSError as exc:
             self._log(f"[{job.label}] ERROR: Cannot create destination '{job.dest}' — {exc}"); return
         if not os.path.isdir(dest_long):
             self._log(f"[{job.label}] ERROR: Destination not accessible '{job.dest}'."); return
@@ -1114,7 +1190,7 @@ class BIMAutomatorApp(ctk.CTk):
                     if filter_dt is not None:
                         try:
                             file_mtime = datetime.fromtimestamp(os.path.getmtime(src))
-                        except Exception:
+                        except OSError:
                             file_mtime = datetime.min
                         if file_mtime < filter_dt:
                             self._log(
@@ -1123,17 +1199,17 @@ class BIMAutomatorApp(ctk.CTk):
                             )
                             continue
 
-                    # Long-path safe on BOTH ends. shutil.copy2 overwrites any
-                    # existing file at the destination by default.
+                    # Long-path safe on BOTH ends. _force_overwrite_copy clears the
+                    # read-only attribute so an existing file is reliably replaced.
                     dst = os.path.join(dest_long, filename)
 
                     try:
                         overwrote = os.path.exists(dst)
-                        shutil.copy2(src, dst)
+                        _force_overwrite_copy(src, dst)
                         action = "Overwrote" if overwrote else "Copied"
                         self._log(f"[{job.label}]   ✔ {action}: {filename}")
                         ok += 1
-                    except Exception as exc:
+                    except Exception as exc:           # noqa: BLE001 - log any per-file failure
                         self._log(f"[{job.label}]   ✘ Failed: {filename} — {exc}")
                         fail += 1
 
@@ -1159,7 +1235,8 @@ class BIMAutomatorApp(ctk.CTk):
 
     def _run_all_jobs(self):
         self._set_status("● Running", COLORS["orange"])
-        for job in list(self.jobs): self._run_job(job)
+        for job in list(self.jobs):
+            self._run_job(job)
         self._set_status("● Scheduled" if self.is_running else "● Idle",
                          COLORS["blue"] if self.is_running else COLORS["text_dim"])
 
@@ -1172,7 +1249,8 @@ class BIMAutomatorApp(ctk.CTk):
         if not self.is_running:
             errors = []
             for job in self.jobs:
-                if not job.enabled: continue
+                if not job.enabled:
+                    continue
                 if not job.sources:
                     errors.append(f"{job.label}: no source folders.")
                 if not job.dest:
@@ -1193,7 +1271,8 @@ class BIMAutomatorApp(ctk.CTk):
             self._log("Scheduler started.")
         else:
             self.is_running = False
-            with self._sched_lock: schedule.clear()
+            with self._sched_lock:
+                schedule.clear()
             self.btn_sched.configure(text="⏱  Start Scheduler",
                                       fg_color=COLORS["blue"], hover_color=COLORS["blue_h"])
             self._set_status("● Idle", COLORS["text_dim"])
@@ -1203,23 +1282,26 @@ class BIMAutomatorApp(ctk.CTk):
         with self._sched_lock:
             schedule.clear()
             for job in self.jobs:
-                if not job.enabled: continue
+                if not job.enabled:
+                    continue
                 for day in job.days:
                     day_attr = DAY_MAP.get(day)
-                    if not day_attr: continue
+                    if not day_attr:
+                        continue
                     try:
                         getattr(schedule.every(), day_attr).at(job.exec_time).do(
                             lambda j=job: threading.Thread(
                                 target=self._run_job, args=(j,), daemon=True).start())
                         self._log(f"Scheduled {job.label} → {day} {job.exec_time}")
-                    except Exception as exc:
+                    except Exception as exc:           # noqa: BLE001
                         self._log(f"Schedule error for {job.label}: {exc}")
         while self.is_running:
-            with self._sched_lock: schedule.run_pending()
+            with self._sched_lock:
+                schedule.run_pending()
             time.sleep(10)
 
 
 # ── Entry Point ────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    app = BIMAutomatorApp()
-    app.mainloop()
+    main_app = BIMAutomatorApp()
+    main_app.mainloop()
